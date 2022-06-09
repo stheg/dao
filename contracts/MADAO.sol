@@ -2,9 +2,8 @@
 pragma solidity ^0.8.13;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/access/AccessControl.sol";
 
-contract MADAO is AccessControl {
+contract MADAO {
     enum Status {
         InProcess,
         Finished,
@@ -39,11 +38,14 @@ contract MADAO is AccessControl {
         uint24 debatingPeriodDuration
     ) {
         _chairperson = chairperson;
-        _grantRole(DEFAULT_ADMIN_ROLE, chairperson);
 
         _voteToken = voteToken;
         _minimumQuorum = minimumQuorum;
         _votingPeriodDuration = debatingPeriodDuration;
+    }
+
+    function getProposal(uint256 id) external view returns (Proposal memory) {
+        return _proposals[id];
     }
 
     function deposit(uint256 amount) external {
@@ -69,7 +71,7 @@ contract MADAO is AccessControl {
         address recipient,
         bytes memory funcSignature,
         string memory description
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    ) external {
         require(msg.sender == _chairperson, "MADAO: no access");
         Proposal storage p = _proposals[_proposalCounter++];
         p.funcSignature = funcSignature;
@@ -85,7 +87,8 @@ contract MADAO is AccessControl {
             "MADAO: voting period ended"
         );
         require(!_voted[msg.sender][proposalId], "MADAO: voted already");
-
+        _voted[msg.sender][proposalId] = true;
+        
         // because of the common voting period for all proposals,
         // it's enough to keep the last voting.
         // all votings before will finish before the last one.
