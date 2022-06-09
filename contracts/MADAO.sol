@@ -15,17 +15,17 @@ contract MADAO {
         uint8 status;
         uint64 startDate; //it's ok until (Jul 21 2554)
         address recipient;
-        uint256 votesFor;
-        uint256 votesAgainst;
+        uint128 votesFor;
+        uint128 votesAgainst;
         bytes funcSignature;
         string description;
     }
 
-    uint64 private _minimumQuorum = 1000;
-    uint24 private _votingPeriodDuration = 3 days; //~6 months max
+    uint64 private _minimumQuorum;
+    uint24 private _votingPeriodDuration; //~6 months max
     address private _voteToken;
     address private _chairperson;
-    uint32 private _proposalCounter;
+    uint32 private _proposalCounter = 1; //0 is reserved for _lastVoting logic
     mapping(uint256 => Proposal) private _proposals;
     mapping(address => uint256) private _deposit;
     mapping(address => mapping(uint256 => bool)) private _voted;
@@ -44,8 +44,17 @@ contract MADAO {
         _votingPeriodDuration = debatingPeriodDuration;
     }
 
+    modifier proposalExists(uint256 pId) {
+        require(pId > 0 && pId < _proposalCounter, "MADAO: no such voting");
+        _;
+    }
+
     function getProposal(uint256 id) external view returns (Proposal memory) {
         return _proposals[id];
+    }
+
+    function getDeposit() external view returns (uint256) {
+        return _deposit[msg.sender];
     }
 
     function deposit(uint256 amount) external {
@@ -55,13 +64,21 @@ contract MADAO {
     }
 
     function withdraw() external {
-        Proposal memory lastVoting = _proposals[_lastVoting[msg.sender]];
+        uint256 amount = _deposit[msg.sender];
         require(
-            lastVoting.status != uint8(Status.InProcess),
-            "MADAO: tokens are frozen"
+            amount > 0,
+            "MADAO: nothing to withdraw"
         );
+        
+        uint256 lvId = _lastVoting[msg.sender];
+        if (lvId > 0) {
+            // check if user voted
+            require(
+                _proposals[lvId].status != uint8(Status.InProcess),
+                "MADAO: tokens are frozen"
+            );
+        }
 
-        uint amount = _deposit[msg.sender];
         _deposit[msg.sender] = 0;
 
         IERC20(_voteToken).transfer(msg.sender, amount);
@@ -80,7 +97,13 @@ contract MADAO {
         p.startDate = uint64(block.timestamp);
     }
 
-    function vote(uint32 proposalId, bool agree) external {
+    function vote(uint32 proposalId, bool agree)
+        external
+        proposalExists(proposalId)
+    {
+        uint128 availableAmount = uint128(_deposit[msg.sender]);
+        require(availableAmount > 0, "MADAO: no deposit to vote");
+
         Proposal storage p = _proposals[proposalId];
         require( //now < finishDate
             block.timestamp < p.startDate + _votingPeriodDuration,
@@ -88,19 +111,19 @@ contract MADAO {
         );
         require(!_voted[msg.sender][proposalId], "MADAO: voted already");
         _voted[msg.sender][proposalId] = true;
-        
+
         // because of the common voting period for all proposals,
         // it's enough to keep the last voting.
         // all votings before will finish before the last one.
-        uint lastVotingId = _lastVoting[msg.sender];
-        if (proposalId > lastVotingId)
-            _lastVoting[msg.sender] = proposalId;
+        uint256 lastVotingId = _lastVoting[msg.sender];
+        if (proposalId > lastVotingId) 
+            _lastVoting[msg.sender] = proposalId;//this is needed for withdraw
 
-        if (agree) p.votesFor += _deposit[msg.sender];
-        else p.votesAgainst += _deposit[msg.sender];
+        if (agree) p.votesFor += availableAmount;
+        else p.votesAgainst += availableAmount;
     }
 
-    function finish(uint256 proposalId) external {
+    function finish(uint256 proposalId) external proposalExists(proposalId) {
         Proposal storage p = _proposals[proposalId];
         require( //now > finishDate
             block.timestamp > p.startDate + _votingPeriodDuration,
@@ -121,6 +144,4 @@ contract MADAO {
         (bool success, ) = p.recipient.call(p.funcSignature);
         require(success, "MADAO: recipient call error");
     }
-
-    // function delegate(address to, uint256 proposal) external {}
 }

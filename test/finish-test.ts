@@ -39,75 +39,78 @@ describe("MA DAO", () => {
         );
     })
 
-    describe("vote", () => {
-        it("should work", async () => {
-            await contract.connect(user1).deposit(1000);
-            await contract.connect(user1).vote(proposalId, true);
-        });
-
-        it("should increase votes for the proposal", async () => {
-            const amount = 1000;
-            await contract.connect(user1).deposit(amount);
-            await contract.connect(user1).vote(proposalId, true);
-
-            const p = await contract.getProposal(proposalId);
-            expect(p.votesFor).eq(amount);
-        });
-
-        it("should increase votes against the proposal", async () => {
-            const amount = 1000;
-            await contract.connect(user1).deposit(amount);
-            await contract.connect(user1).vote(proposalId, false);
-
-            const p = await contract.getProposal(proposalId);
-            expect(p.votesAgainst).eq(amount);
-        });
-
-        it("should be possible to vote in 2+ votings using the same deposit", async () => {
-            await contract.addProposal(
-                voteToken.address,
-                callData,
-                "transfer 1000 vote tokens to chairperson second time"
-            );
-            const secondProposalId = proposalId + 1;
-
-            const amount = 1000;
-            await contract.connect(user1).deposit(amount);
-            
-            await contract.connect(user1).vote(proposalId, true);
-            await contract.connect(user1).vote(secondProposalId, false);
-
-            const p1 = await contract.getProposal(proposalId);
-            const p2 = await contract.getProposal(secondProposalId);
-            expect(p1.votesFor).eq(p2.votesAgainst);
-        });
-        
-        it("should be reverted if no deposit", async () => {
-            const tx = contract.connect(user1).vote(proposalId, true);
-            await expect(tx).to.be.revertedWith("MADAO: no deposit to vote");
-        });
-
-        it("should be reverted if voted already", async () => {
-            await contract.connect(user1).deposit(1000);
-            await contract.connect(user1).vote(proposalId, true);
-
-            const tx = contract.connect(user1).vote(proposalId, true);
-            await expect(tx).to.be.revertedWith("MADAO: voted already");
-        });
-
-        it("should be reverted if voting period ended", async () => {
-            await contract.connect(user1).deposit(1000);
+    describe("finish", () => {
+        it("should be cancelled", async () => {
             await delay(duration, 60);
 
-            const tx = contract.connect(user1).vote(proposalId, true);
-            await expect(tx).to.be.revertedWith("MADAO: voting period ended");
+            await contract.connect(user1).finish(proposalId);
+
+            const p = await contract.getProposal(proposalId);
+            expect(p.status).eq(3);//cancelled
+        });
+
+        it("should be rejected", async () => {
+            await contract.connect(user1).deposit(1000);
+            await contract.connect(user1).vote(proposalId, false);
+
+            await delay(duration, 60);
+
+            await contract.connect(user1).finish(proposalId);
+
+            const p = await contract.getProposal(proposalId);
+            expect(p.status).eq(2);
+        });
+
+        it("should be finished", async () => {
+            await contract.connect(user1).deposit(1000);
+            await contract.connect(user1).vote(proposalId, true);
+
+            await delay(duration, 60);
+
+            await contract.connect(user1).finish(proposalId);
+
+            const p = await contract.getProposal(proposalId);
+            expect(p.status).eq(1);
+        });
+
+        it("should be rejected if callData reverts", async () => {
+            await contract.connect(user1).deposit(1000);
+            await contract.connect(user1).vote(proposalId, true);
+
+            await delay(duration, 60);
+
+            await voteToken.mock.transferFrom.reverts();
+            const tx = contract.connect(user1).finish(proposalId);
+
+            await expect(tx).to.be.revertedWith("MADAO: recipient call error");
+        });
+
+        it("should be rejected if called second time for the same proposal", async () => {
+            await contract.connect(user1).deposit(1000);
+            await contract.connect(user1).vote(proposalId, true);
+
+            await delay(duration, 60);
+
+            await contract.connect(user1).finish(proposalId);
+            const tx = contract.connect(user1).finish(proposalId);
+
+            await expect(tx).to.be.revertedWith("MADAO: handled already");
+        });
+
+        it("should be rejected if voting is in process", async () => {
+            await contract.connect(user1).deposit(1000);
+            await contract.connect(user1).vote(proposalId, true);
+
+            const tx = contract.connect(user1).finish(proposalId);
+
+            await expect(tx).to.be.revertedWith("MADAO: voting is in process");
         });
 
         it("should be reverted if voting doesn't exist", async () => {
-            const tx1 = contract.connect(user1).vote(123, true);
+            const tx1 = contract.connect(user1).finish(123);
             await expect(tx1).to.be.revertedWith("MADAO: no such voting");
 
-            const tx2 = contract.connect(user1).vote(0, true);
+            const tx2 = contract.connect(user1).finish(0);
             await expect(tx2).to.be.revertedWith("MADAO: no such voting");
         });
     });

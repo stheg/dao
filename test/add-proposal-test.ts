@@ -38,7 +38,7 @@ describe("MA DAO", () => {
                 description
             );
 
-            const p = await contract.getProposal(0);
+            const p = await contract.getProposal(1);
             expect(p.recipient).eq(voteToken.address);
             expect(p.funcSignature).eq(callData);
             expect(p.description).eq(description);
