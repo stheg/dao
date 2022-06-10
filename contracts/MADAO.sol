@@ -57,6 +57,10 @@ contract MADAO {
         return _deposit[msg.sender];
     }
 
+    function getVoteToken() external view returns (address) {
+        return _voteToken;
+    }
+
     function deposit(uint256 amount) external {
         _deposit[msg.sender] += amount;
 
@@ -71,8 +75,7 @@ contract MADAO {
         );
         
         uint256 lvId = _lastVoting[msg.sender];
-        if (lvId > 0) {
-            // check if user voted
+        if (lvId > 0) { // check if user voted
             require(
                 _proposals[lvId].status != uint8(Status.InProcess),
                 "MADAO: tokens are frozen"
