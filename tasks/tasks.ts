@@ -4,8 +4,12 @@ task("deposit", "Transfers vote-tokens to the contract to use them in votings")
     .addParam("contract", "Address of the contract")
     .addParam("amount", "Amount of tokens to be deposited")
     .addFlag("approve", "Auto-approve requested amount before deposit action")
+    .addOptionalParam("user", "User address")
     .setAction(async (args, hre) => {
-        const [owner, user1, user2] = await hre.ethers.getSigners();
+        let [owner, user1, user2] = await hre.ethers.getSigners();
+        if (args.user)
+            user1 = await hre.ethers.getSigner(args.user);
+
         const contract = 
             await hre.ethers.getContractAt("MADAO", args.contract, user1);
         
@@ -25,8 +29,11 @@ task("deposit", "Transfers vote-tokens to the contract to use them in votings")
 
 task("withdraw", "Requests vote-tokens back from the contract")
     .addParam("contract", "Address of the contract")
+    .addOptionalParam("user", "User address")
     .setAction(async (args, hre) => {
-        const [owner, user1, user2] = await hre.ethers.getSigners();
+        let [owner, user1, user2] = await hre.ethers.getSigners();
+        if (args.user)
+            user1 = await hre.ethers.getSigner(args.user);
         const contract =
             await hre.ethers.getContractAt("MADAO", args.contract, user1);
 
@@ -46,7 +53,8 @@ task("add-proposal", "Starts a new voting for the specified proposal")
         const contract =
             await hre.ethers.getContractAt("MADAO", args.contract, chairperson);
 
-        const recipient = new hre.ethers.Contract(args.recipient, args.func);
+        const funcAbi = ["function " + args.func + " external"];
+        const recipient = new hre.ethers.Contract(args.recipient, funcAbi);
         const proposal = recipient.interface.encodeFunctionData(args.func, args.fargs);
 
         await contract.addProposal(args.recipient, proposal, args.description);
