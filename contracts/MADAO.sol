@@ -30,6 +30,7 @@ contract MADAO {
     mapping(address => uint256) private _deposit;
     mapping(address => mapping(uint256 => bool)) private _voted;
     mapping(address => uint256) private _lastVoting;
+    mapping(address => mapping(uint256 => uint256)) private _allowance;
 
     constructor(
         address chairperson,
@@ -46,6 +47,12 @@ contract MADAO {
 
     modifier proposalExists(uint256 pId) {
         require(pId > 0 && pId < _proposalCounter, "MADAO: no such voting");
+        _;
+    }
+
+    modifier voteGuard(address voter, uint256 pId) {
+        require(!_voted[msg.sender][pId], "MADAO: voted already");
+        _voted[msg.sender][pId] = true;
         _;
     }
 
@@ -69,13 +76,11 @@ contract MADAO {
 
     function withdraw() external {
         uint256 amount = _deposit[msg.sender];
-        require(
-            amount > 0,
-            "MADAO: nothing to withdraw"
-        );
-        
+        require(amount > 0, "MADAO: nothing to withdraw");
+
         uint256 lvId = _lastVoting[msg.sender];
-        if (lvId > 0) { // check if user voted
+        if (lvId > 0) {
+            // check if user voted
             require(
                 _proposals[lvId].status != uint8(Status.InProcess),
                 "MADAO: tokens are frozen"
@@ -100,34 +105,31 @@ contract MADAO {
         p.startDate = uint64(block.timestamp);
     }
 
-    function vote(uint32 proposalId, bool agree)
+    function vote(uint32 pId, bool agree)
         external
-        proposalExists(proposalId)
+        proposalExists(pId)
+        voteGuard(msg.sender, pId)
     {
-        uint128 availableAmount = uint128(_deposit[msg.sender]);
-        require(availableAmount > 0, "MADAO: no deposit to vote");
+        uint128 availableAmount = uint128(_checkAmount(msg.sender, pId));
 
-        Proposal storage p = _proposals[proposalId];
+        Proposal storage p = _proposals[pId];
         require( //now < finishDate
             block.timestamp < p.startDate + _votingPeriodDuration,
             "MADAO: voting period ended"
         );
-        require(!_voted[msg.sender][proposalId], "MADAO: voted already");
-        _voted[msg.sender][proposalId] = true;
 
         // because of the common voting period for all proposals,
         // it's enough to keep the last voting.
         // all votings before will finish before the last one.
         uint256 lastVotingId = _lastVoting[msg.sender];
-        if (proposalId > lastVotingId) 
-            _lastVoting[msg.sender] = proposalId;//this is needed for withdraw
+        if (pId > lastVotingId) _lastVoting[msg.sender] = pId; //this is needed for withdraw
 
         if (agree) p.votesFor += availableAmount;
         else p.votesAgainst += availableAmount;
     }
 
-    function finish(uint256 proposalId) external proposalExists(proposalId) {
-        Proposal storage p = _proposals[proposalId];
+    function finish(uint256 pId) external proposalExists(pId) {
+        Proposal storage p = _proposals[pId];
         require( //now > finishDate
             block.timestamp > p.startDate + _votingPeriodDuration,
             "MADAO: voting is in process"
@@ -146,5 +148,24 @@ contract MADAO {
 
         (bool success, ) = p.recipient.call(p.funcSignature);
         require(success, "MADAO: recipient call error");
+    }
+
+    function delegate(address aDelegate, uint256 pId)
+        external
+        proposalExists(pId)
+        voteGuard(msg.sender, pId)
+    {
+        require(!_voted[aDelegate][pId], "MADAO: delegate voted already");
+        _allowance[aDelegate][pId] += _checkAmount(msg.sender, pId);
+    }
+
+    function _checkAmount(address voter, uint256 pId)
+        private
+        view
+        returns (uint256)
+    {
+        uint256 availableAmount = _deposit[voter] + _allowance[voter][pId];
+        require(availableAmount > 0, "MADAO: no deposit");
+        return availableAmount;
     }
 }

@@ -26,6 +26,7 @@ describe("MA DAO", () => {
         );
 
         await contract.deployed();
+        await contract.getVoteToken();
     })
 
     describe("addProposal", () => {

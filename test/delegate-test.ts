@@ -39,51 +39,26 @@ describe("MA DAO", () => {
         );
     })
 
-    describe("vote", () => {
+    describe("delegate", () => {
         it("should work", async () => {
             await contract.connect(user1).deposit(1000);
-            await contract.connect(user1).vote(proposalId, true);
+            await contract.connect(user1).delegate(user2.address, proposalId);
         });
 
-        it("should increase votes for the proposal", async () => {
+        it("should use delegated votes in voting", async () => {
             const amount = 1000;
             await contract.connect(user1).deposit(amount);
-            await contract.connect(user1).vote(proposalId, true);
-
-            const p = await contract.getProposal(proposalId);
-            expect(p.votesFor).eq(amount);
-        });
-
-        it("should increase votes against the proposal", async () => {
-            const amount = 1000;
-            await contract.connect(user1).deposit(amount);
-            await contract.connect(user1).vote(proposalId, false);
-
-            const p = await contract.getProposal(proposalId);
-            expect(p.votesAgainst).eq(amount);
-        });
-
-        it("should be possible to vote in 2+ votings using the same deposit", async () => {
-            await contract.addProposal(
-                voteToken.address,
-                callData,
-                "transfer 1000 vote tokens to chairperson second time"
-            );
-            const secondProposalId = proposalId + 1;
-
-            const amount = 1000;
-            await contract.connect(user1).deposit(amount);
+            await contract.connect(user2).deposit(amount);
             
+            await contract.connect(user2).delegate(user1.address, proposalId);
             await contract.connect(user1).vote(proposalId, true);
-            await contract.connect(user1).vote(secondProposalId, false);
 
-            const p1 = await contract.getProposal(proposalId);
-            const p2 = await contract.getProposal(secondProposalId);
-            expect(p1.votesFor).eq(p2.votesAgainst);
+            const p = await contract.getProposal(proposalId);
+            expect(p.votesFor).eq(amount*2);
         });
-        
+
         it("should be reverted if no deposit", async () => {
-            const tx = contract.connect(user1).vote(proposalId, true);
+            const tx = contract.connect(user1).delegate(user2.address, proposalId);
             await expect(tx).to.be.revertedWith("MADAO: no deposit");
         });
 
@@ -91,23 +66,32 @@ describe("MA DAO", () => {
             await contract.connect(user1).deposit(1000);
             await contract.connect(user1).vote(proposalId, true);
 
-            const tx = contract.connect(user1).vote(proposalId, true);
+            const tx = contract.connect(user1).delegate(user2.address, proposalId);
             await expect(tx).to.be.revertedWith("MADAO: voted already");
         });
 
-        it("should be reverted if voting period ended", async () => {
+        it("should be reverted if a delegate voted already", async () => {
             await contract.connect(user1).deposit(1000);
-            await delay(duration, 60);
+            await contract.connect(user2).deposit(1000);
+            await contract.connect(user2).vote(proposalId, true);
 
-            const tx = contract.connect(user1).vote(proposalId, true);
-            await expect(tx).to.be.revertedWith("MADAO: voting period ended");
+            const tx = contract.connect(user1).delegate(user2.address, proposalId);
+            await expect(tx).to.be.revertedWith("MADAO: delegate voted already");
+        });
+
+        it("should be reverted if delegated already", async () => {
+            await contract.connect(user1).deposit(1000);
+            await contract.connect(user1).delegate(chairperson.address, proposalId);
+
+            const tx = contract.connect(user1).delegate(user2.address, proposalId);
+            await expect(tx).to.be.revertedWith("MADAO: voted already");
         });
 
         it("should be reverted if voting doesn't exist", async () => {
-            const tx1 = contract.connect(user1).vote(123, true);
+            const tx1 = contract.connect(user1).delegate(user2.address, 123);
             await expect(tx1).to.be.revertedWith("MADAO: no such voting");
 
-            const tx2 = contract.connect(user1).vote(0, true);
+            const tx2 = contract.connect(user1).delegate(user2.address, 0);
             await expect(tx2).to.be.revertedWith("MADAO: no such voting");
         });
     });
