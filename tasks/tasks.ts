@@ -27,6 +27,24 @@ task("deposit", "Transfers vote-tokens to the contract to use them in votings")
         console.log("done");
     });
 
+task("delegate", "Allows to delegate deposited votes")
+    .addParam("contract", "Address of the contract")
+    .addParam("to", "Address of a delegate")
+    .addParam("proposal", "Index of a proposal")
+    .addOptionalParam("user", "User address")
+    .setAction(async (args, hre) => {
+        let [chairperson, user1, user2] = await hre.ethers.getSigners();
+        if (args.user)
+            user1 = await hre.ethers.getSigner(args.user);
+            
+        const contract =
+            await hre.ethers.getContractAt("MADAO", args.contract, user1);
+
+        await contract.delegate(args.to, args.proposal);
+
+        console.log("done");
+    });
+
 task("withdraw", "Requests vote-tokens back from the contract")
     .addParam("contract", "Address of the contract")
     .addOptionalParam("user", "User address")
